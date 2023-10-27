@@ -1,22 +1,19 @@
-Source: qt5integration
+Source: qt6integration
 Section: devel
 Priority: optional
 Maintainer: Deepin Packages Builder <packages@deepin.com>
 Build-Depends:
- debhelper (>=9),
+ debhelper-compat (= 12),
  cmake,
- qtbase5-dev,
- qtbase5-private-dev,
- libqt5xdg-dev,
- libdtkgui-dev (>=5.6.13),
- libdtkwidget-dev,
+ qt6-base-dev,
+ qt6-base-private-dev,
+ libdtk6widget-dev,
+ libdtkcommon-dev,
  pkg-config,
- libqt5x11extras5-dev,
  libfontconfig1-dev,
  libfreetype-dev,
  libglib2.0-dev,
- libqt5svg5-dev,
- libqt5xdgiconloader-dev,
+ qt6-svg-dev,
  libmtdev-dev,
  libegl1-mesa-dev,
  libxrender-dev,
@@ -24,10 +21,9 @@ Build-Depends:
  libgmock-dev
 Standards-Version: 3.9.8
 
-Package: dde-qt5integration
+Package: dde-qt6integration
 Architecture: any
-Provides: libqt5deepintheme-plugin
-Conflicts: libqt5deepintheme-plugin
-Depends: ${shlibs:Depends}, ${misc:Depends}, dde-qt5xcb-plugin
+Provides: libqt6deepintheme-plugin
+Depends: ${shlibs:Depends}, ${misc:Depends}, dde-qt6xcb-plugin
 Description: Qt platform theme integration plugins for DDE
- Multiple Qt plugins to provide better Qt5 integration for DDE is included.
+ Multiple Qt plugins to provide better Qt6 integration for DDE is included.
