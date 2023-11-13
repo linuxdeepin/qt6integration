@@ -1,3 +1,9 @@
+qt6integration (6.0.1) unstable; urgency=medium
+
+  * support archlinux build
+
+ -- Yixue Wang <wangyixue@deepin.org>  Mon, 13 Nov 2023 10:16:51 +0800
+
 qt6integration (6.0.0) unstable; urgency=medium
 
   * Release 6.0.0
