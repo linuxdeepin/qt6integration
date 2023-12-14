@@ -208,8 +208,9 @@ void ChameleonStyle::drawPrimitive(QStyle::PrimitiveElement pe, const QStyleOpti
 
         //QTreeView的绘制复制了QCommonStyle的代码，添加了圆角的处理,hover的处理
         if (qobject_cast<const QTreeView *>(w)) {
+            const auto &delegate = *qobject_cast<const QTreeView *>(w)->itemDelegate();
             //如果QTreeView使用的不是默认代理 QStyledItemDelegate,则采取DStyle的默认绘制(备注:这里的QtCreator不会有hover效果和圆角)
-            if (!qobject_cast<QStyledItemDelegate *>(qobject_cast<const QTreeView *>(w)->itemDelegate())) {
+            if (typeid(delegate) != typeid(QStyledItemDelegate)) {
                 break;
             }
 
@@ -269,7 +270,7 @@ void ChameleonStyle::drawPrimitive(QStyle::PrimitiveElement pe, const QStyleOpti
                p->setPen(Qt::NoPen);
                p->setBrush(getColor(opt, QPalette::Highlight));
                p->setRenderHint(QPainter::Antialiasing);
-               p->drawRoundedRect(select_rect.adjusted(1, 1, -1, -1), frame_radius, frame_radius);
+               p->drawRoundedRect(select_rect, frame_radius, frame_radius);
                return;
             } else {
                 if (vopt->backgroundBrush.style() != Qt::NoBrush) {
@@ -277,7 +278,7 @@ void ChameleonStyle::drawPrimitive(QStyle::PrimitiveElement pe, const QStyleOpti
                     p->setPen(Qt::NoPen);
                     p->setBrush(vopt->backgroundBrush);
                     p->setRenderHint(QPainter::Antialiasing);
-                    p->drawRoundedRect(opt->rect.adjusted(1, 1, -1, -1), frame_radius, frame_radius);
+                    p->drawRoundedRect(opt->rect, frame_radius, frame_radius);
                     p->restore();
                     return;
                 }
@@ -575,8 +576,9 @@ void ChameleonStyle::drawPrimitive(QStyle::PrimitiveElement pe, const QStyleOpti
         }
         //这里QTreeView的绘制复制了QCommonStyle的代码，添加了圆角的处理,hover的处理
         if (qobject_cast<const QTreeView *>(w)) {
+            const auto &delegate = *qobject_cast<const QTreeView *>(w)->itemDelegate();
             //如果QTreeView使用的不是默认代理 QStyledItemDelegate,则采取DStyle的默认绘制(备注:这里的QtCreator不会有hover效果和圆角)
-            if (!qobject_cast<QStyledItemDelegate *>(qobject_cast<const QTreeView *>(w)->itemDelegate())) {
+            if (typeid(delegate) != typeid(QStyledItemDelegate)) {
                 break;
             }
 
