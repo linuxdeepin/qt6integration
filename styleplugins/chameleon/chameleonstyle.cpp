@@ -2954,8 +2954,8 @@ bool ChameleonStyle::drawMenuItem(const QStyleOptionMenuItem *option, QPainter *
 
             if (checkable) {
                 checkRect.setLeft(frameRadius);
-                checkRect.setWidth(smallIconSize);
-                checkRect.setHeight(smallIconSize);
+                checkRect.setWidth(smallIconSize - 2);
+                checkRect.setHeight(smallIconSize - 4);
                 checkRect.moveCenter(QPoint(checkRect.left() + smallIconSize / 2, menuItem->rect.center().y()));
                 painter->setRenderHint(QPainter::Antialiasing);
 
@@ -4358,7 +4358,8 @@ void ChameleonStyle::polish(QWidget *w)
                 handle.setEnableBlurWindow(true);
 
                 DPlatformTheme *theme = DGuiApplicationHelper::instance()->applicationTheme();
-                setWindowRadius(w, qMax(0, qMin(theme->windowRadius(), 18)));
+                if (theme->isValid())
+                    setWindowRadius(w, qMax(0, qMin(theme->windowRadius(), 18)));
 
                 connect(theme, &DPlatformTheme::windowRadiusChanged, w, [w](int r){
                    setWindowRadius(w, qMax(0, qMin(r, 18)));
