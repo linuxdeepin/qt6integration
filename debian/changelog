@@ -1,3 +1,10 @@
+qt6integration (6.0.17) unstable; urgency=medium
+
+  * sync: from linuxdeepin/qt5integration
+  * sync: from linuxdeepin/qt5integration
+
+ -- Deepin Packages Builder <packages@deepin.org>  Mon, 24 Jun 2024 05:35:02 +0000
+
 qt6integration (6.0.16) unstable; urgency=medium
 
   * 6.0.16
