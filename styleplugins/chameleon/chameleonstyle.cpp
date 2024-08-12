@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2017 - 2023 UnionTech Software Technology Co., Ltd.
+ * SPDX-FileCopyrightText: 2017 - 2024 UnionTech Software Technology Co., Ltd.
  * SPDX-License-Identifier: LGPL-3.0-or-later
  */
 #include "chameleonstyle.h"
@@ -40,6 +40,9 @@
 #include <QBitmap>
 #include <QTableView>
 #include <QStyledItemDelegate>
+#include <QVariantAnimation>
+#include <QProgressBar>
+#include <QTimer>
 #include <DSpinBox>
 #include <DTreeView>
 #include <DIconButton>
@@ -120,6 +123,66 @@ inline static bool isTheClassObject(QObject *object)
 #else
     return object->metaObject()->metaType() == T::staticMetaObject.metaType();
 #endif
+}
+
+ChameleonMovementAnimation::ChameleonMovementAnimation(QWidget *targetWidget)
+    : QVariantAnimation(targetWidget)
+{
+    setDuration(150);
+
+    connect(this, &QVariantAnimation::valueChanged, targetWidget, [this] (const QVariant &value) {
+        if (!isRuning())
+            return;
+
+        const auto rect = value.toRect();
+        Q_ASSERT(!m_currentRect.isEmpty());
+        this->targetWidget()->update(m_currentRect.united(rect));
+        m_currentRect = rect;
+    });
+    connect(this, &QVariantAnimation::finished, targetWidget, [this] {
+        Q_ASSERT(m_currentRect == m_targetRect);
+        // 确保动画结束后有一帧的刷新，因为在菜单的动画过程中会修改菜单文字的 opacity
+        // 对opacity的修改会根据是否处于动画状态进行判断，因此要确保动画结束后刷新它
+        this->targetWidget()->update(m_currentRect);
+    });
+}
+
+QWidget *ChameleonMovementAnimation::targetWidget() const
+{
+    return qobject_cast<QWidget*>(parent());
+}
+
+void ChameleonMovementAnimation::setTargetRect(const QRect &rect)
+{
+    if (m_targetRect == rect)
+        return;
+
+    m_lastTargetRect = m_targetRect;
+    m_targetRect = rect;
+
+    if (m_currentRect.isEmpty())
+        m_currentRect = m_lastTargetRect;
+
+    // 当目标绘制区域改变时，说明当前正在进行的动画过期了，应该重新开始动画
+    stop();
+    setStartValue(m_currentRect);
+    setEndValue(rect);
+
+    if (!m_currentRect.isEmpty()) {
+        start();
+    } else {
+        // 这种情况说明不需要进行动画，往往发生在首次显示，这时候应该直接绘制到目标区域
+        m_currentRect = rect;
+    }
+}
+
+void ChameleonMovementAnimation::setCurrentRect(const QRect &rect)
+{
+    if (m_currentRect == rect)
+        return;
+
+    m_currentRect = rect;
+    m_targetRect = QRect();
 }
 
 ChameleonStyle::ChameleonStyle()
@@ -376,67 +439,31 @@ void ChameleonStyle::drawPrimitive(QStyle::PrimitiveElement pe, const QStyleOpti
         return;
     }
     case PE_IndicatorRadioButton: {
-        QRect standard = opt->rect;
+        auto radioButton = qobject_cast<QRadioButton *>(opt->styleObject);
+        if (!radioButton)
+            radioButton = dynamic_cast<QRadioButton *>(p->device());
 
-        p->setRenderHint(QPainter::Antialiasing, true);
+        if (!radioButton)
+            return;
 
-        if (opt->state & State_On) {  //Qt::Checked
-            int padding = qCeil(standard.width() / 2.0 / 2.0);
-            QPainterPath path;
+        auto dciIconPlayer = dciIconPlayers.value(radioButton);
 
-            path.addEllipse(standard);
-            path.addEllipse(standard.adjusted(padding, padding, -padding, -padding));
-
-            p->fillPath(path, getColor(opt, DPalette::Highlight));
-
-            // 内圈填充
-            QPainterPath innerCirclePath;
-            innerCirclePath.addEllipse(standard.adjusted(padding, padding, -padding, -padding));
-            p->fillPath(innerCirclePath, getThemTypeColor(Qt::white, Qt::black));
-        } else if (opt->state & State_Off) {
-            p->setPen(QPen(getColor(opt, DPalette::WindowText), 1));
-            p->drawEllipse(standard.adjusted(1, 1, -1, -1));
-
-            // 内圈填充
-            QPainterPath innerCirclePath;
-            innerCirclePath.addEllipse(standard.adjusted(1, 1, -1, -1));
-            p->fillPath(innerCirclePath, getThemTypeColor(Qt::transparent, QColor(0, 0, 0, qCeil(255 * 0.5))));
-        }
-
+        p->setRenderHint(QPainter::SmoothPixmapTransform);
+        p->drawImage(opt->rect.adjusted(-1, -1, 1, 1), dciIconPlayer->currentImage());
         return;
     }
     case PE_IndicatorCheckBox: {
-        QRectF standard = opt->rect;
+        auto checkBox = qobject_cast<QCheckBox *>(opt->styleObject);
+        if (!checkBox)
+            checkBox = dynamic_cast<QCheckBox *>(p->device());
 
-        if (opt->state & State_NoChange) {  //Qt::PartiallyChecked
-            DDrawUtils::drawBorder(p, standard, getColor(opt, DPalette::WindowText), 1, 2);
+        if (!checkBox)
+            return;
 
-            // 内部矩形填充
-            p->setBrush(getThemTypeColor(Qt::transparent, QColor(0, 0, 0, qCeil(255 * 0.5))));
-            p->drawRoundedRect(standard.adjusted(1, 1, -1, -1), 2, 2);
+        auto dciIconPlayer = dciIconPlayers.value(checkBox);
 
-            QRectF lineRect(0, 0, standard.width() / 2.0, 2);
-            lineRect.moveCenter(standard.center());
-            p->fillRect(lineRect, getColor(opt, DPalette::TextTitle, w));
-        } else if (opt->state & State_On) {  //Qt::Checked
-            // 填充整个矩形
-            p->setPen(Qt::NoPen);
-            p->setBrush(getThemTypeColor(Qt::transparent, Qt::black));
-            p->drawRoundedRect(standard.adjusted(1, 1, -1, -1), 2, 2);
-
-            p->setPen(getColor(opt, DPalette::Highlight));
-            p->setBrush(Qt::NoBrush);
-
-            QIcon icon = QIcon::fromTheme("checked");
-            icon.paint(p, opt->rect.adjusted(-1, -1, 1, 1));
-        } else {
-            DDrawUtils::drawBorder(p, standard, getColor(opt, DPalette::WindowText), 1, 2);
-
-            // 内部矩形填充
-            p->setBrush(getThemTypeColor(Qt::transparent, getThemTypeColor(Qt::transparent, QColor(0, 0, 0, qCeil(255 * 0.5)))));
-            p->drawRoundedRect(standard.adjusted(1, 1, -1, -1), 2, 2);
-        }
-
+        p->setRenderHint(QPainter::SmoothPixmapTransform);
+        p->drawImage(opt->rect.adjusted(-1, -1, 1, 1), dciIconPlayer->currentImage());
         return;
     }
     case PE_IndicatorTabClose: {
@@ -1370,7 +1397,17 @@ void ChameleonStyle::drawControl(QStyle::ControlElement element, const QStyleOpt
                 frameRadius = qMin(height / 2, 4);
             }
             p->setBrush(getColor(opt, DPalette::ObviousBackground, w));
+            p->setPen(Qt::NoPen);
             p->drawRoundedRect(opt->rect, frameRadius, frameRadius);
+
+            QPen pen;
+            pen.setColor(DGuiApplicationHelper::instance()->themeType() == DGuiApplicationHelper::DarkType
+                         ? QColor(255, 255, 255, 0.15 * 255)
+                         : QColor(0, 0, 0, 0.15 * 255));
+            pen.setWidth(1);
+            p->setPen(pen);
+            p->setBrush(Qt::NoBrush);
+            p->drawRoundedRect(opt->rect.marginsRemoved(QMargins(1, 1, 1, 1)), frameRadius, frameRadius);
         }
         return;
     }
@@ -1410,7 +1447,7 @@ void ChameleonStyle::drawControl(QStyle::ControlElement element, const QStyleOpt
             linear.setColorAt(0, startColor);
             linear.setColorAt(1, endColor);
             linear.setSpread(QGradient::PadSpread);
-            p->setBrush(QBrush(linear));
+            p->setBrush(startColor);
 
             if (progBar->textVisible) {
                 QPainterPath pathRect;
@@ -1418,7 +1455,23 @@ void ChameleonStyle::drawControl(QStyle::ControlElement element, const QStyleOpt
                 QPainterPath pathRoundRect;
                 pathRoundRect.addRoundedRect(opt->rect, frameRadius, frameRadius);
                 QPainterPath inter = pathRoundRect.intersected(pathRect);
+
+                QPainterPath clipPath;
+                clipPath.addRoundedRect(rect, frameRadius, frameRadius);
+                p->setClipPath(clipPath);
+                p->setClipping(true);
                 p->drawPath(inter);
+                p->setClipping(false);
+
+                QPen pen;
+                pen.setColor(DGuiApplicationHelper::instance()->themeType() == DGuiApplicationHelper::DarkType
+                             ? QColor(255, 255, 255, 0.3 * 255)
+                             : QColor(0, 0, 0, 0.3 * 255));
+                pen.setWidth(1);
+                p->setPen(pen);
+                p->setBrush(Qt::NoBrush);
+                p->drawRoundedRect(rect.marginsRemoved(QMargins(1, 1, 1, 1)), frameRadius, frameRadius);
+
             } else {
                 //进度条高度 <= 8px && 进度条宽度 <= 8px && value有效
                 if (rect.height() <= ProgressBar_MinimumStyleHeight &&
@@ -1444,8 +1497,109 @@ void ChameleonStyle::drawControl(QStyle::ControlElement element, const QStyleOpt
                         path2.arcTo(endRect, 90, -180);
                         p->drawPath(path2);
                     }
-                } else
+                } else {
+                    QPainterPath clipPath;
+                    clipPath.addRoundedRect(opt->rect, frameRadius, frameRadius);
+                    p->setClipPath(clipPath);
+                    p->setClipping(true);
                     p->drawRoundedRect(rect, frameRadius, frameRadius);
+                    p->setClipping(false);
+
+                    QPen pen;
+                    pen.setColor(QColor(0, 0, 0, 0.3 * 255));
+                    pen.setWidth(1);
+                    p->setPen(pen);
+                    p->setBrush(Qt::NoBrush);
+                    p->setClipping(true);
+                    p->drawRoundedRect(rect.marginsRemoved(QMargins(1, 1, 1, 1)), frameRadius, frameRadius);
+                    p->setClipping(false);
+                }
+            }
+
+            // 进度条光斑
+            auto progressbar = qobject_cast<QProgressBar *>(opt->styleObject);
+            if (!progressbar)
+                progressbar = dynamic_cast<QProgressBar *>(p->device());
+
+            if (!progressbar)
+                return;
+
+            bool isHorizontal = (progressbar->orientation() == Qt::Horizontal);
+
+            constexpr int spotWidth = 200;
+            if (isHorizontal ? rect.width() >= spotWidth : rect.height() >= spotWidth) {
+                p->setPen(Qt::NoPen);
+
+                ChameleonMovementAnimation *progressAnimation = nullptr;
+
+                progressAnimation = progressbar->findChild<ChameleonMovementAnimation *>("_d_progress_spot_animation",
+                                                                                  Qt::FindDirectChildrenOnly);
+                if (!progressAnimation) {
+                    progressAnimation = new ChameleonMovementAnimation(progressbar);
+                    progressAnimation->setObjectName("_d_progress_spot_animation");
+                }
+
+                QColor shadowColor(0, 0, 0, int(0.15 * 255));
+                QColor spotColor(255, 255, 255, int(0.5 * 255));
+                QColor highLightColor(getColor(opt, DPalette::Highlight));
+
+                QPointF pointStart, pointEnd;
+                if (isHorizontal) {
+                    pointStart = QPointF(progressAnimation->currentValue().toRect().left(), progressAnimation->currentValue().toRect().center().y());
+                    pointEnd = QPointF(progressAnimation->currentValue().toRect().right(), progressAnimation->currentValue().toRect().center().y());
+                } else {
+                    pointStart = QPointF(progressAnimation->currentValue().toRect().center().x(), progressAnimation->currentValue().toRect().bottom());
+                    pointEnd = QPointF(progressAnimation->currentValue().toRect().center().x(), progressAnimation->currentValue().toRect().top());
+                }
+                QLinearGradient linear(pointStart, pointEnd);
+                linear.setColorAt(0, highLightColor);
+                linear.setColorAt(0.35, shadowColor);
+                linear.setColorAt(0.5, spotColor);
+                linear.setColorAt(0.65, shadowColor);
+                linear.setColorAt(1, highLightColor);
+                linear.setSpread(QGradient::PadSpread);
+                linear.setInterpolationMode(QLinearGradient::InterpolationMode::ColorInterpolation);
+                p->setBrush(linear);
+
+                QPainterPath clipPath;
+                clipPath.addRoundedRect(rect, frameRadius, frameRadius);
+                p->setClipping(true);
+                p->drawRect(progressAnimation->currentValue().toRect().marginsRemoved(QMargins(1, 1, 1, 1)));
+                p->setClipping(false);
+
+                if (progressAnimation->state() == QVariantAnimation::Running) {
+                    QRect startRect, endRect;
+                    if (isHorizontal) {
+                        startRect = QRect(rect.x() - spotWidth, rect.y(), spotWidth, rect.height());
+                        endRect = startRect;
+                        endRect.moveRight(rect.width() + spotWidth);
+                    } else {
+                        endRect = QRect(rect.x(), rect.y() - spotWidth, rect.width(), spotWidth);
+                        startRect = endRect;
+                        startRect.moveTop(rect.bottom());
+                    }
+                    progressAnimation->setTargetRect(endRect);
+                    return;
+                }
+
+                // 动画之间需要间隔1s
+                QTimer::singleShot(1000, progressAnimation, [progressAnimation, isHorizontal, rect]() {
+                    QRect startRect, endRect;
+                    if (isHorizontal) {
+                        startRect = QRect(rect.x() - spotWidth, rect.y(), spotWidth, rect.height());
+                        endRect = startRect;
+                        endRect.moveRight(rect.width() + spotWidth);
+                    } else {
+                        endRect = QRect(rect.x(), rect.y() - spotWidth, rect.width(), spotWidth);
+                        startRect = endRect;
+                        startRect.moveTop(rect.bottom());
+                    }
+
+                    progressAnimation->setDuration(2500);
+                    progressAnimation->setEasingCurve(QEasingCurve::InQuad);
+                    progressAnimation->setCurrentRect(startRect);
+                    progressAnimation->setTargetRect(endRect);
+                });
             }
         }
         return;
@@ -2757,7 +2911,7 @@ bool ChameleonStyle::drawMenuBarItem(const QStyleOptionMenuItem *option, QRect &
     return true;
 }
 
-void ChameleonStyle::drawMenuItemBackground(const QStyleOption *option, QPainter *painter, QStyleOptionMenuItem::MenuItemType type) const
+ChameleonMovementAnimation *ChameleonStyle::drawMenuItemBackground(const QStyleOption *option, QPainter *painter, QStyleOptionMenuItem::MenuItemType type) const
 {
     QBrush color;
     bool selected = (option->state & QStyle::State_Enabled) && option->state & QStyle::State_Selected;
@@ -2766,7 +2920,7 @@ void ChameleonStyle::drawMenuItemBackground(const QStyleOption *option, QPainter
         painter->setPen(Qt::NoPen);
         painter->setBrush(getColor(option, QPalette::Highlight));
         painter->drawRect(option->rect);
-        return;
+        return nullptr;
      }
 
     // 清理旧的阴影
@@ -2791,8 +2945,6 @@ void ChameleonStyle::drawMenuItemBackground(const QStyleOption *option, QPainter
     }
 
     if (selected) {
-        color = option->palette.highlight();
-
         // draw shadow
         if (type == QStyleOptionMenuItem::Normal) {
             if (option->styleObject) {
@@ -2807,9 +2959,7 @@ void ChameleonStyle::drawMenuItemBackground(const QStyleOption *option, QPainter
                 }
             }
         }
-
-        painter->fillRect(option->rect, color);
-    } else {
+    } else do {
         color = option->palette.window().color();
 
         if (color.color().isValid() && color.color().alpha() != 0) {
@@ -2846,14 +2996,14 @@ void ChameleonStyle::drawMenuItemBackground(const QStyleOption *option, QPainter
         }
 
         if (!option->styleObject)
-            return;
+            break;
 
         // 为上一个item绘制阴影
         const QRect shadow = option->styleObject->property("_d_menu_shadow_rect").toRect();
 
         // 判断阴影rect是否在自己的区域
         if (!option->rect.contains(shadow.center()))
-            return;
+            break;
 
         static QColor shadow_color;
         static QPixmap shadow_pixmap;
@@ -2870,11 +3020,47 @@ void ChameleonStyle::drawMenuItemBackground(const QStyleOption *option, QPainter
         if (!shadow_pixmap.isNull()) {
             if (QMenu *menu = qobject_cast<QMenu *>(option->styleObject)) {
                 if (!menu->geometry().contains(QCursor::pos()))
-                    return;
+                    break;
             }
             painter->drawPixmap(shadow, shadow_pixmap);
         }
+    } while (false);
+
+    { // 无论如何都尝试绘制，因为可能有动画存在
+        color = option->palette.highlight();
+
+        QWidget *animationTargetWidget = qobject_cast<QWidget*>(option->styleObject);
+        if (!option->styleObject)
+            animationTargetWidget = dynamic_cast<QWidget*>(painter->device());
+
+        ChameleonMovementAnimation *animation = nullptr;
+
+        if (animationTargetWidget) {
+            animation = animationTargetWidget->findChild<ChameleonMovementAnimation*>("_d_menu_select_animation",
+                                                                              Qt::FindDirectChildrenOnly);
+            if (!animation) {
+                animation = new ChameleonMovementAnimation(animationTargetWidget);
+                animation->setObjectName("_d_menu_select_animation");
+            }
+
+            if (selected)
+                animation->setTargetRect(option->rect);
+        }
+
+        if (animation && animation->isRuning()) {
+            auto opacity = painter->opacity();
+            // 一些状态为 disable 的 menu item 在绘制时会修改不透明度，这里暂时改回1.0。
+            painter->setOpacity(1.0);
+            painter->fillRect(animation->currentRect(), color);
+            painter->setOpacity(opacity);
+
+            return animation;
+        } else if (selected) {
+            painter->fillRect(option->rect, color);
+        }
     }
+
+    return nullptr;
 }
 
 void ChameleonStyle::drawMenuItemRedPoint(const QStyleOptionMenuItem *option, QPainter *painter, const QWidget *widget) const
@@ -2955,7 +3141,7 @@ bool ChameleonStyle::drawMenuItem(const QStyleOptionMenuItem *option, QPainter *
         bool sunken = menuItem->state & State_Sunken;
 
         //绘制背景
-        drawMenuItemBackground(option, painter, menuItem->menuItemType);
+        auto animation = drawMenuItemBackground(option, painter, menuItem->menuItemType);
 
         //绘制分段
         if (menuItem->menuItemType == QStyleOptionMenuItem::Separator) {
@@ -2970,6 +3156,13 @@ bool ChameleonStyle::drawMenuItem(const QStyleOptionMenuItem *option, QPainter *
             }
 
             return true;
+        }
+
+        const bool useHighlightedText = selected && !animation;
+        if (!useHighlightedText && selected) {
+            // 在动画中时，selected item 的文字颜色不会使用 HighlightedText，当动画结束后会立即
+            // 变为 HighlightedText，会显得比较突然，因此使用不透明度对文本等内容进行过渡
+            painter->setOpacity(1.0 - animation->progress());
         }
 
         //绘制选择框
@@ -2990,7 +3183,7 @@ bool ChameleonStyle::drawMenuItem(const QStyleOptionMenuItem *option, QPainter *
                 checkRect.moveCenter(QPoint(checkRect.left() + smallIconSize / 2, menuItem->rect.center().y()));
                 painter->setRenderHint(QPainter::Antialiasing);
 
-                if (selected)
+                if (useHighlightedText)
                     painter->setPen(getColor(option, QPalette::HighlightedText));
                 else
                     painter->setPen(getColor(option, QPalette::BrightText));
@@ -3010,7 +3203,7 @@ bool ChameleonStyle::drawMenuItem(const QStyleOptionMenuItem *option, QPainter *
 
         }
 
-        if (selected) {
+        if (useHighlightedText) {
             painter->setPen(getColor(option, QPalette::HighlightedText));
         } else {
             if ((option->state & QStyle::State_Enabled)) {
@@ -4266,6 +4459,145 @@ void ChameleonStyle::resetAttribute(QWidget *w, bool polish)
         scrollbar->setProperty("_d_dtk_scrollbar_visible", true);
         scrollbar->setAttribute(Qt::WA_OpaquePaintEvent, !polish);
     }
+
+    if (auto radioButton = qobject_cast<QRadioButton *>(w)) {
+        if (polish) {
+            radioButton->installEventFilter(this);
+        } else {
+            radioButton->removeEventFilter(this);
+        }
+        auto dciIconPlayer = new DDciIconPlayer(radioButton);
+        connect(dciIconPlayer, &DDciIconPlayer::updated, radioButton, [radioButton]() {
+            radioButton->update();
+        });
+        dciIconPlayers.insert(radioButton, dciIconPlayer);
+    }
+
+    if (auto checkBox = qobject_cast<QCheckBox *>(w)) {
+        if (polish) {
+            checkBox->installEventFilter(this);
+        } else {
+            checkBox->removeEventFilter(this);
+        }
+        auto dciIconPlayer = new DDciIconPlayer(checkBox);
+        connect(dciIconPlayer, &DDciIconPlayer::updated, checkBox, [checkBox]() {
+            checkBox->update();
+        });
+        dciIconPlayers.insert(checkBox, dciIconPlayer);
+    }
+}
+
+static void playDci(DDciIconPlayer *player, const DDciIcon &icon, DDciIcon::Mode mode)
+{
+    player->setIcon(icon);
+    player->play(mode);
+}
+
+bool ChameleonStyle::eventFilter(QObject *watched, QEvent *event)
+{
+    if (auto radioButton = qobject_cast<QRadioButton *>(watched)) {
+
+        auto player = dciIconPlayers.value(radioButton);
+        if (!player)
+            return DStyle::eventFilter(watched, event);
+
+        DDciIcon icon = radioButton->isChecked() ? DDciIcon::fromTheme("radio_checked") : DDciIcon::fromTheme("radio_unchecked");
+        auto pa = DDciIconPalette::fromQPalette(radioButton->palette());
+
+        switch (event->type()) {
+        case QEvent::Paint:
+            player->setPalette(pa);
+            player->setDevicePixelRatio(qApp->devicePixelRatio());
+            player->setTheme(DGuiApplicationHelper::instance()->themeType() == DGuiApplicationHelper::DarkType
+                          ? DDciIcon::Theme::Dark
+                          : DDciIcon::Theme::Light);
+            break;
+        case QEvent::WindowActivate:
+            player->setIcon(icon);
+            player->setMode(DDciIcon::Normal);
+            break;
+        case QEvent::MouseButtonPress:
+            playDci(player, icon, DDciIcon::Pressed);
+            break;
+        case QEvent::HoverEnter:
+            playDci(player, icon, DDciIcon::Hover);
+            break;
+        case QEvent::MouseButtonRelease:
+            icon = !radioButton->isChecked() ? DDciIcon::fromTheme("radio_checked") : DDciIcon::fromTheme("radio_unchecked");
+            playDci(player, icon, DDciIcon::Hover);
+            break;
+        case QEvent::HoverLeave:
+            playDci(player, icon, DDciIcon::Normal);
+            break;
+        case QEvent::KeyPress:
+            if (auto key = dynamic_cast<QKeyEvent *>(event)) {
+                if (key->key() == Qt::Key_Space) {
+                    playDci(player, icon, DDciIcon::Pressed);
+                }
+            }
+            break;
+        case QEvent::KeyRelease:
+            if (auto key = dynamic_cast<QKeyEvent *>(event)) {
+                if (key->key() == Qt::Key_Space) {
+                    icon = !radioButton->isChecked() ? DDciIcon::fromTheme("radio_checked") : DDciIcon::fromTheme("radio_checked");
+                    playDci(player, icon, DDciIcon::Normal);
+                }
+            }
+            break;
+        }
+    }
+    if (auto checkBox = qobject_cast<QCheckBox *>(watched)) {
+
+        auto player = dciIconPlayers.value(checkBox);
+        if (!player)
+            return DStyle::eventFilter(watched, event);
+
+        DDciIcon icon = checkBox->isChecked() ? DDciIcon::fromTheme("checkbox_checked") : DDciIcon::fromTheme("checkbox_unchecked");
+        auto pa = DDciIconPalette::fromQPalette(checkBox->palette());
+
+        switch (event->type()) {
+        case QEvent::Paint:
+            player->setPalette(pa);
+            player->setDevicePixelRatio(qApp->devicePixelRatio());
+            player->setTheme(DGuiApplicationHelper::instance()->themeType() == DGuiApplicationHelper::DarkType
+                          ? DDciIcon::Theme::Dark
+                          : DDciIcon::Theme::Light);
+            break;
+        case QEvent::WindowActivate:
+            player->setIcon(icon);
+            player->setMode(DDciIcon::Normal);
+            break;
+        case QEvent::MouseButtonPress:
+            playDci(player, icon, DDciIcon::Pressed);
+            break;
+        case QEvent::HoverEnter:
+            playDci(player, icon, DDciIcon::Hover);
+            break;
+        case QEvent::MouseButtonRelease:
+            icon = !checkBox->isChecked() ? DDciIcon::fromTheme("checkbox_checked") : DDciIcon::fromTheme("checkbox_unchecked");
+            playDci(player, icon, DDciIcon::Hover);
+            break;
+        case QEvent::HoverLeave:
+            playDci(player, icon, DDciIcon::Normal);
+            break;
+        case QEvent::KeyPress:
+            if (auto key = dynamic_cast<QKeyEvent *>(event)) {
+                if (key->key() == Qt::Key_Space) {
+                    playDci(player, icon, DDciIcon::Pressed);
+                }
+            }
+            break;
+        case QEvent::KeyRelease:
+            if (auto key = dynamic_cast<QKeyEvent *>(event)) {
+                if (key->key() == Qt::Key_Space) {
+                    icon = !checkBox->isChecked() ? DDciIcon::fromTheme("checkbox_checked") : DDciIcon::fromTheme("checkbox_checked");
+                    playDci(player, icon, DDciIcon::Normal);
+                }
+            }
+            break;
+        }
+    }
+    return DStyle::eventFilter(watched, event);
 }
 
 static void updateWeekendTextFormat(QCalendarWidget *calendar, QColor)
