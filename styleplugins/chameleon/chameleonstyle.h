@@ -1,11 +1,12 @@
 /*
- * SPDX-FileCopyrightText: 2017 - 2022 UnionTech Software Technology Co., Ltd.
+ * SPDX-FileCopyrightText: 2017 - 2024 UnionTech Software Technology Co., Ltd.
  * SPDX-License-Identifier: LGPL-3.0-or-later
  */
 #ifndef CHAMELEONSTYLE_H
 #define CHAMELEONSTYLE_H
 
 #include <DStyle>
+#include <DDciIconPlayer>
 #include <QVariantAnimation>
 
 DWIDGET_USE_NAMESPACE
@@ -40,6 +41,7 @@ public:
 
     QWidget *targetWidget() const;
     void setTargetRect(const QRect &rect);
+    void setCurrentRect(const QRect &rect);
 
 private:
     QRect m_currentRect;
