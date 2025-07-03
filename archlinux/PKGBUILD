@@ -1,6 +1,6 @@
 # Maintainer: justforlxz <justforlxz@gmail.com>
 pkgname=deepin-qt6integration-git
-pkgver=6.0.38
+pkgver=6.0.39
 pkgrel=1
 sourcename=qt6integration
 sourcetars=("$sourcename"_"$pkgver".tar.xz)
